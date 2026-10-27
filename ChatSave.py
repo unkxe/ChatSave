@@ -1,6 +1,6 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (3, 2, 1)
+__version__ = (3, 2, 2)
 
 import asyncio
 import base64 as _b64
@@ -1032,8 +1032,10 @@ class ChatSave(loader.Module):
 
         names = {}
         rows = []
+        is_private = chat_id > 0
         last_day = None
         prev_sid = None
+        prev_out = None
         prev_dt = None
 
         for m in msgs:
@@ -1047,6 +1049,7 @@ class ChatSave(loader.Module):
                 label = ACTIONS.get(type(m.action).__name__, "⚙️ Событие в чате")
                 rows.append(f'<div class="svc"><span>{_esc(label)}</span></div>')
                 prev_sid = None
+                prev_out = None
                 prev_dt = None
                 continue
 
@@ -1076,10 +1079,12 @@ class ChatSave(loader.Module):
 
             grouped = (
                 prev_sid == sid
+                and prev_out == m.out
                 and prev_dt is not None
                 and (date - prev_dt).total_seconds() < 600
             )
             prev_sid = sid
+            prev_out = m.out
             prev_dt = date
 
             stamp = date.strftime("%H:%M") + (" ✏️" if m.edit_date else "")
@@ -1097,7 +1102,8 @@ class ChatSave(loader.Module):
 
             avatar = ""
             name_line = ""
-            if grouped and not m.out:
+            show_side_avatar = (not m.out) or (is_private and m.out)
+            if show_side_avatar and grouped:
                 avatar = '<div class="ava-ghost"></div>'
             if not m.out and not grouped:
                 color = _palette(name)
@@ -1115,15 +1121,27 @@ class ChatSave(loader.Module):
                     f'<span class="nm" style="color:{color};cursor:pointer"'
                     f' {open_tab[1:] if prof else ""}>{_esc(name)}</span>'
                 )
+            elif is_private and m.out and not grouped:
+                color = _palette(name)
+                prof = profiles.get(sid)
+                if prof and prof.get("avatar"):
+                    ava_inner = f'<img class="avaimg" src="{prof["avatar"]}" alt="">'
+                else:
+                    ava_inner = _esc(_initials(name))
+                open_tab = f' onclick="showProfile({sid})"' if prof else ""
+                avatar = (
+                    f'<div class="ava" style="background:{color};width:37px;height:37px;'
+                    f'font-size:13px;cursor:pointer"{open_tab}>{ava_inner}</div>'
+                )
 
             cls = "m" + (" out" if m.out else "") + ("" if grouped else " g1")
             rows.append(f'<div class="{cls}">{avatar}<div class="b">{name_line}{inner}</div></div>')
 
         info = f"Экспорт: {time.strftime('%d.%m.%Y %H:%M')} · ID чата: {chat_id}"
-        people_html = await self._people_block(profiles, colors)
         for _sid, _c in colors.items():
             if _sid in profiles:
                 profiles[_sid]["color"] = _c
+        people_html = await self._people_block(profiles, colors)
         data = json.dumps(profiles, ensure_ascii=False).replace("</", "<\\/")
         page = (
             PAGE.replace("__TITLE__", _esc(title))
