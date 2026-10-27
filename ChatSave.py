@@ -1,10 +1,11 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (2, 2, 0)
+__version__ = (2, 3, 0)
 
 import asyncio
 import base64 as _b64
 import html as _html
+import json
 import mimetypes as _mt
 import os
 import re
@@ -79,6 +80,9 @@ body{background:radial-gradient(1200px 600px at 15% -10%,rgba(94,181,247,.16),tr
 .vd{display:block;width:330px;max-width:100%;border-radius:12px;margin:3px 0;background:#000}
 .vn{width:230px;height:230px;border-radius:50%;object-fit:cover;margin:4px auto;display:block;border:2px solid var(--line)}
 .mfail{display:inline-block;font-size:13px;color:#e17076;margin:3px 0}
+.stk{width:150px;height:150px;object-fit:contain;margin:2px 0;display:inline-block;transition:transform .2s}
+.stk:hover{transform:scale(1.12)}
+.stk-anim{display:inline-block;font-size:52px;line-height:1;margin:2px 0}
 .burn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:#ff9e57;background:rgba(255,140,60,.13);border:1px solid rgba(255,140,60,.35);padding:2px 9px;border-radius:10px;margin:3px 0}
 .mfile{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.15);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:4px 0;max-width:330px;text-decoration:none;color:var(--fg);transition:transform .18s,border-color .18s}
 .mfile:hover{transform:translateY(-2px);border-color:var(--accent)}
@@ -94,6 +98,35 @@ body{background:radial-gradient(1200px 600px at 15% -10%,rgba(94,181,247,.16),tr
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes drop{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
 @keyframes zoom{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+.avaimg{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.people{margin:0 0 20px;border:1px solid var(--line);border-radius:16px;background:var(--card);backdrop-filter:blur(12px);overflow:hidden;animation:drop .5s both}
+.people>summary{cursor:pointer;list-style:none;padding:13px 18px;font-weight:700;font-size:14.5px;user-select:none;transition:background .2s}
+.people>summary:hover{background:rgba(94,181,247,.08)}
+.people>summary::-webkit-details-marker{display:none}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;padding:6px 14px 16px}
+.pcard{display:flex;gap:11px;padding:11px;border-radius:14px;background:rgba(0,0,0,.14);border:1px solid var(--line);transition:transform .2s,border-color .2s}
+.pcard:hover{transform:translateY(-2px);border-color:var(--accent)}
+.pav{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.pbody{min-width:0;flex:1}
+.pname{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbadges{display:flex;flex-wrap:wrap;gap:5px;margin:3px 0}
+.pb{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:8px;border:1px solid transparent}
+.pb-bot{color:#7bd88f;background:rgba(123,216,143,.12);border-color:rgba(123,216,143,.3)}
+.pb-prem{color:#ffd166;background:rgba(255,209,102,.12);border-color:rgba(255,209,102,.3)}
+.pb-ver{color:#5eb5f7;background:rgba(94,181,247,.12);border-color:rgba(94,181,247,.3)}
+.prow{display:flex;gap:6px;font-size:11.5px;margin-top:2px;color:var(--dim)}
+.pk{min-width:64px;opacity:.75}
+.pv{color:var(--fg);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbio{font-size:12px;color:var(--dim);margin-top:5px;font-style:italic;max-height:52px;overflow:hidden}
+#pf{position:fixed;inset:0;background:rgba(4,8,12,.85);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;z-index:120;opacity:0;transition:opacity .28s;padding:18px}
+#pf.on{display:flex;opacity:1}
+.pfbox{width:min(420px,94vw);background:var(--bg2);border:1px solid var(--line);border-radius:22px;padding:26px 22px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.6);animation:zoom .34s cubic-bezier(.2,.9,.2,1) both;position:relative}
+.pfbox .pav{width:92px;height:92px;margin:0 auto 14px;font-size:34px}
+.pfbox .pname{font-size:20px;margin-bottom:4px}
+.pfbox .prow{justify-content:center;font-size:13px;margin-top:6px}
+.pfbox .pbio{margin-top:12px;font-size:13px;max-height:none}
+#pf .x{position:absolute;top:12px;right:14px;font-size:22px;color:var(--dim);cursor:pointer;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background .2s,transform .2s}
+#pf .x:hover{background:rgba(255,255,255,.1);transform:rotate(90deg);color:var(--fg)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:600px){.b{max-width:84%}.pm,.vd{max-width:100%}.wrap{padding:14px 10px 80px}}
 </style>
@@ -109,10 +142,13 @@ body{background:radial-gradient(1200px 600px at 15% -10%,rgba(94,181,247,.16),tr
 <div class="spacer"></div>
 <div class="tool"><button class="ib" id="theme" title="Тема">🌙</button></div>
 </div>
+__PEOPLE__
 __MESSAGES__
 <div class="footer">🗂 ChatSave · __COUNT__ · выгружено __DATE__</div>
 </div>
 <div id="lb"><span class="x">✕</span><div id="lbc"></div></div>
+<div id="pf"><div class="pfbox"><span class="x">✕</span><div id="pfc"></div></div></div>
+<script type="application/json" id="profiles">__PROFILE_JSON__</script>
 <script>
 (function(){
   var root=document.documentElement,tb=document.getElementById('theme');
@@ -139,6 +175,30 @@ __MESSAGES__
     es.forEach(function(en){if(en.isIntersecting){en.target.style.animationPlayState='running';io.unobserve(en.target)}});
   },{threshold:.05});
   document.querySelectorAll('.m,.day,.svc').forEach(function(el){el.style.animationPlayState='paused';io.observe(el)});
+  var PFROOT=document.getElementById('pf'),PFC=document.getElementById('pfc');
+  var PDATA={};try{PDATA=JSON.parse(document.getElementById('profiles').textContent)}catch(e){}
+  function esc(v){var d=document.createElement('div');d.textContent=v==null?'':v;return d.innerHTML}
+  function closePf(){PFROOT.classList.remove('on')}
+  window.showProfile=function(sid){
+    var p=PDATA[sid];if(!p)return;
+    var b=[];
+    if(p.bot)b.push('<span class="pb pb-bot">🤖 бот</span>');
+    if(p.premium)b.push('<span class="pb pb-prem">⭐ premium</span>');
+    if(p.verified)b.push('<span class="pb pb-ver">✅ проверен</span>');
+    var rows=[];
+    if(p.username)rows.push('<div class="prow"><span class="pk">username</span><span class="pv">@'+esc(p.username)+'</span></div>');
+    if(p.id)rows.push('<div class="prow"><span class="pk">ID</span><span class="pv">'+esc(p.id)+'</span></div>');
+    if(p.dc)rows.push('<div class="prow"><span class="pk">DC</span><span class="pv">'+esc(p.dc)+'</span></div>');
+    if(p.phone)rows.push('<div class="prow"><span class="pk">телефон</span><span class="pv">'+esc(p.phone)+'</span></div>');
+    if(p.status)rows.push('<div class="prow"><span class="pk">статус</span><span class="pv">'+esc(p.status)+'</span></div>');
+    PFC.innerHTML='<div class="pav" style="background:'+(p.color||'#5eb5f7')+'">'+
+      (p.avatar?'<img class="avaimg" src="'+p.avatar+'" alt="">':esc((p.name||'?').slice(0,2).toUpperCase()))+
+      '</div><div class="pname">'+esc(p.name)+'</div><div class="pbadges">'+b.join('')+'</div>'+
+      rows.join('')+(p.bio?'<div class="pbio">'+esc(p.bio)+'</div>':'');
+    PFROOT.classList.add('on');
+  };
+  PFROOT.addEventListener('click',function(e){if(e.target===PFROOT||e.target.classList.contains('x'))closePf()});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')closePf()});
 })();
 </script>
 </body>
@@ -196,6 +256,10 @@ class ChatSave(loader.Module):
             loader.ConfigValue("default_limit", 0, lambda: "Сколько сообщений выгружать по умолчанию (0 — вся история)"),
             loader.ConfigValue("embed_media", True, lambda: "Встраивать фото/видео прямо в HTML (base64, один автономный файл)"),
             loader.ConfigValue("embed_max_mb", 200, lambda: "Лимит размера одного медиа для встраивания, МБ"),
+            loader.ConfigValue("save_profiles", True, lambda: "Собирать профили участников (ID, DC, username, статус)"),
+            loader.ConfigValue("save_avatars", True, lambda: "Встраивать аватарки профилей в HTML"),
+            loader.ConfigValue("avatar_max_kb", 64, lambda: "Макбалл размера аватарки, КБ"),
+            loader.ConfigValue("save_bio", True, lambda: "Пробовать получить описание профиля (bio)"),
         )
 
     async def client_ready(self, client, db):
@@ -320,7 +384,10 @@ class ChatSave(loader.Module):
                         except Exception:
                             form = None
 
-        html_data = await self._render(title, chat_id, reversed(msgs), len(msgs), media_map)
+        profiles, colors = await self._collect_profiles(chat, msgs, form, started)
+        html_data = await self._render(
+            title, chat_id, reversed(msgs), len(msgs), media_map, profiles, colors
+        )
         os.makedirs(site_dir, exist_ok=True)
         index_path = os.path.join(site_dir, "index.html")
         with open(index_path, "wb") as f:
@@ -400,6 +467,98 @@ class ChatSave(loader.Module):
             raise last
         return None
 
+    def _status_text(self, user):
+        st = getattr(user, "status", None)
+        name = type(st).__name__ if st is not None else ""
+        mapping = {
+            "UserStatusOnline": "🟢 в сети",
+            "UserStatusRecently": "🕐 недавно",
+            "UserStatusLastWeek": "🕐 на этой неделе",
+            "UserStatusLastMonth": "🕐 в этом месяце",
+        }
+        if name in mapping:
+            return mapping[name]
+        if name == "UserStatusOffline":
+            was = getattr(st, "was_online", None)
+            try:
+                return "⚪ был(а) " + was.strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                return "⚪ офлайн"
+        return ""
+
+    def _dc_id(self, obj):
+        photo = getattr(obj, "photo", None)
+        dc = getattr(photo, "dc_id", None)
+        return int(dc) if dc else None
+
+    async def _avatar_b64(self, who):
+        if not self._opt_bool("save_profiles", True):
+            return None
+        try:
+            limit = int(self._opt_num("avatar_max_kb", 64)) * 1024
+            data = await self._client.download_profile_photo(who, file=bytes)
+            if not data:
+                return None
+            if len(data) > limit:
+                data = data[:limit]
+            return "data:image/jpeg;base64," + _b64.b64encode(data).decode("ascii")
+        except Exception:
+            return None
+
+    async def _profile_of(self, who):
+        prof = {
+            "name": _display_name(who) or "Отправитель",
+            "username": getattr(who, "username", None),
+            "id": getattr(who, "id", None),
+            "dc": self._dc_id(who),
+            "phone": getattr(who, "phone", None),
+            "bot": bool(getattr(who, "bot", False)),
+            "premium": bool(getattr(who, "premium", False)),
+            "verified": bool(getattr(who, "verified", False)),
+            "status": self._status_text(who),
+            "bio": None,
+        }
+        if self._opt_bool("save_bio", True):
+            try:
+                from ataraxiatl.tl.functions.users import GetFullUserRequest
+
+                full = await self._client(GetFullUserRequest(who.id))
+                prof["bio"] = (getattr(full.full_user, "about", None) or "").strip() or None
+            except Exception:
+                pass
+        if self._opt_bool("save_avatars", True):
+            prof["avatar"] = await self._avatar_b64(who)
+        return prof
+
+    async def _collect_profiles(self, chat, msgs, form=None, started=0.0):
+        if not self._opt_bool("save_profiles", True):
+            return {}, {}
+        profiles = {}
+        avatars = {}
+        try:
+            senders = {}
+            for m in msgs:
+                sid = getattr(m, "sender_id", None)
+                if not sid or sid in profiles:
+                    continue
+                sender = getattr(m, "sender", None)
+                if sender is None:
+                    try:
+                        sender = await m.get_sender()
+                    except Exception:
+                        sender = None
+                if sender is not None and not isinstance(sender, int):
+                    senders[sid] = sender
+            for sid, who in senders.items():
+                try:
+                    profiles[sid] = await self._profile_of(who)
+                    avatars[sid] = self._palette(profiles[sid]["name"])
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return profiles, avatars
+
     def _maybe_embed(self, entry, fpath, thumb):
         if not self._opt_bool("embed_media", True):
             return
@@ -452,6 +611,8 @@ class ChatSave(loader.Module):
 
     def _kind(self, m):
         try:
+            if m.sticker:
+                return "sticker"
             if m.photo:
                 return "photo"
             if m.video_note:
@@ -471,6 +632,10 @@ class ChatSave(loader.Module):
             mime = getattr(m.document, "mime_type", "") or ""
             if "webm" in mime:
                 return ".webm"
+            if "tgsticker" in mime or mime.endswith(".tgs") or "x-tgsticker" in mime:
+                return ".tgs"
+            if "webp" in mime:
+                return ".webp"
         except Exception:
             pass
         return ".mp4"
@@ -572,6 +737,15 @@ class ChatSave(loader.Module):
             pass
         return None
 
+    def _sticker_alt(self, m):
+        try:
+            for attr in getattr(m.file, "attributes", []) or []:
+                if getattr(attr, "alt", None):
+                    return attr.alt
+        except Exception:
+            pass
+        return ""
+
     def _media_html(self, m, item):
         if not item:
             return None
@@ -591,6 +765,14 @@ class ChatSave(loader.Module):
                 f'<img class="pm" src="{src}" loading="lazy" alt="фото"'
                 f' onerror="this.outerHTML=\'<span class=mfail>📷 Фото не открылось</span>\'">'
             )
+        if kind == "sticker":
+            alt = self._sticker_alt(m)
+            if item.get("file", "").endswith(".tgs"):
+                return burn + f'<span class="stk-anim">🎭 {_esc(alt or "стикер")}</span>'
+            return burn + (
+                f'<img class="stk" src="{src}" loading="lazy" alt="{_esc(alt)}"'
+                f' onerror="this.outerHTML=\'<span class=mfail>🎭 Стикер</span>\'">'
+            )
         cls = "vd"
         if kind == "video_note":
             cls = "vd vn"
@@ -604,8 +786,10 @@ class ChatSave(loader.Module):
             poster = f' poster="{pthumb if item.get("embed_thumb") else _esc(pthumb)}"'
         return burn + f'<video class="{cls}" src="{src}" controls preload="none"{poster}></video>'
 
-    async def _render(self, title, chat_id, raw, count, media_map=None):
+    async def _render(self, title, chat_id, raw, count, media_map=None, profiles=None, colors=None):
         media_map = media_map or {}
+        profiles = profiles or {}
+        colors = colors or {}
         msgs = list(raw)
         msgs.reverse()
 
@@ -678,20 +862,78 @@ class ChatSave(loader.Module):
             name_line = ""
             if not m.out and not grouped:
                 color = _palette(name)
-                avatar = f'<div class="ava" style="background:{color};width:37px;height:37px;font-size:13px">{_esc(_initials(name))}</div>'
-                name_line = f'<span class="nm" style="color:{color}">{_esc(name)}</span>'
+                prof = profiles.get(sid)
+                if prof and prof.get("avatar"):
+                    ava_inner = f'<img class="avaimg" src="{prof["avatar"]}" alt="">'
+                else:
+                    ava_inner = _esc(_initials(name))
+                open_tab = f' onclick="showProfile({sid})"' if prof else ""
+                avatar = (
+                    f'<div class="ava" style="background:{color};width:37px;height:37px;'
+                    f'font-size:13px;cursor:pointer"{open_tab}>{ava_inner}</div>'
+                )
+                name_line = (
+                    f'<span class="nm" style="color:{color};cursor:pointer"'
+                    f' {open_tab[1:] if prof else ""}>{_esc(name)}</span>'
+                )
 
             cls = "m" + (" out" if m.out else "") + ("" if grouped else " g1")
             rows.append(f'<div class="{cls}">{avatar}<div class="b">{name_line}{inner}</div></div>')
 
         info = f"Экспорт: {time.strftime('%d.%m.%Y %H:%M')} · ID чата: {chat_id}"
+        people_html = await self._people_block(profiles, colors)
+        for _sid, _c in colors.items():
+            if _sid in profiles:
+                profiles[_sid]["color"] = _c
+        data = json.dumps(profiles, ensure_ascii=False).replace("</", "<\\/")
         page = (
             PAGE.replace("__TITLE__", _esc(title))
             .replace("__C_AVA__", _palette(title))
             .replace("__INI__", _esc(_initials(title)))
             .replace("__INFO__", info)
+            .replace("__PEOPLE__", people_html)
+            .replace("__PROFILE_JSON__", data)
             .replace("__MESSAGES__", "\n".join(rows))
             .replace("__COUNT__", str(count))
             .replace("__DATE__", time.strftime("%d.%m.%Y %H:%M"))
         )
         return page.encode("utf-8")
+
+    async def _people_block(self, profiles, colors):
+        if not profiles:
+            return ""
+        cards = []
+        items = sorted(profiles.items(), key=lambda kv: (kv[1].get("name") or "").lower())
+        for sid, prof in items:
+            color = colors.get(sid) or _palette(prof.get("name") or "")
+            if prof.get("avatar"):
+                ava = f'<img class="avaimg" src="{prof["avatar"]}" alt="">'
+            else:
+                ava = _esc(_initials(prof.get("name") or "?"))
+            badges = []
+            if prof.get("bot"):
+                badges.append('<span class="pb pb-bot">🤖 бот</span>')
+            if prof.get("premium"):
+                badges.append('<span class="pb pb-prem">⭐ premium</span>')
+            if prof.get("verified"):
+                badges.append('<span class="pb pb-ver">✅ проверен</span>')
+            uname = f'<div class="prow"><span class="pk">username</span><span class="pv">@{_esc(prof["username"])}</span></div>' if prof.get("username") else ""
+            uid = f'<div class="prow"><span class="pk">ID</span><span class="pv">{_esc(prof["id"])}</span></div>' if prof.get("id") else ""
+            dc = f'<div class="prow"><span class="pk">DC</span><span class="pv">{_esc(prof["dc"])}</span></div>' if prof.get("dc") else ""
+            phone = f'<div class="prow"><span class="pk">телефон</span><span class="pv">{_esc(prof["phone"])}</span></div>' if prof.get("phone") else ""
+            status = f'<div class="prow"><span class="pk">статус</span><span class="pv">{_esc(prof["status"])}</span></div>' if prof.get("status") else ""
+            bio = f'<div class="pbio">{_esc(prof["bio"])}</div>' if prof.get("bio") else ""
+            cards.append(
+                f'<div class="pcard" id="p{sid}">'
+                f'<div class="pav" style="background:{color}">{ava}</div>'
+                f'<div class="pbody"><div class="pname">{_esc(prof.get("name"))}</div>'
+                f'<div class="pbadges">{"".join(badges)}</div>'
+                f'{uname}{uid}{dc}{phone}{status}{bio}</div></div>'
+            )
+        return (
+            '<details class="people"><summary>👥 Участники · '
+            + str(len(profiles))
+            + '</summary><div class="pgrid">'
+            + "".join(cards)
+            + "</div></details>"
+        )
