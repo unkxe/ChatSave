@@ -1,6 +1,6 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (3, 2, 0)
+__version__ = (3, 2, 1)
 
 import asyncio
 import base64 as _b64
@@ -361,19 +361,28 @@ class ChatSave(loader.Module):
 
         base = message
         if message.is_reply:
-            base = await message.get_reply_message()
+            rp = await message.get_reply_message()
+            if rp is not None:
+                base = rp
+        try:
+            chat_id = utils.get_chat_id(base)
+        except Exception:
+            chat_id = utils.get_chat_id(message)
         try:
             chat = await base.get_chat()
-            if not chat:
+        except Exception:
+            chat = None
+        if chat is None:
+            try:
                 chat = await message.get_chat()
-        except Exception as e:
-            return await utils.answer(message, f"🚫 Не смог открыть чат: {e!r}"[:300])
-        chat_id = utils.get_chat_id(chat)
+            except Exception:
+                chat = None
         title = _display_name(chat) or f"Чат {chat_id}"
+        src = chat if chat is not None else chat_id
 
         total = 0
         try:
-            many = await self._client.get_messages(chat, limit=0)
+            many = await self._client.get_messages(src, limit=0)
             total = getattr(many, "total", 0) or 0
         except Exception:
             total = 0
@@ -383,7 +392,7 @@ class ChatSave(loader.Module):
         msgs = []
         seen = 0
         started = time.time()
-        async for m in self._client.iter_messages(chat, limit=limit or None):
+        async for m in self._client.iter_messages(src, limit=limit or None):
             if self._cs_stop:
                 break
             msgs.append(m)
@@ -464,7 +473,7 @@ class ChatSave(loader.Module):
                         except Exception:
                             form = None
 
-        profiles, colors = await self._collect_profiles(chat, msgs, media_map, form, started)
+        profiles, colors = await self._collect_profiles(src, msgs, media_map, form, started)
         html_data = await self._render(
             title, chat_id, reversed(msgs), len(msgs), media_map, profiles, colors
         )
