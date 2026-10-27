@@ -356,7 +356,7 @@ class ChatSave(loader.Module):
     def _progress(self, status, done, total, elapsed=0.0, m_done=0, m_total=0, m_current=""):
         k = self.inline.screen()
         k.add("<b>🗂 ChatSave — экспорт чата в HTML-сайт</b>")
-        k.add("⎯" * 25)
+        k.add("<hr>")
         k.add(f"<b>Статус:</b> {_esc(status)}")
         if elapsed:
             k.add(f"<b>Время:</b> {elapsed:.1f} c")
@@ -369,14 +369,14 @@ class ChatSave(loader.Module):
             k.add(f"<b>Медиа:</b> {m_done}/{m_total} ({mpct}%)")
             if m_current:
                 k.add(f"<code>{_esc(m_current)}</code>")
-        k.add("⎯" * 25)
+        k.add("<hr>")
         k.add(k.row(k.tap("⛔ Остановить", self._stop, style="danger", force_me=True)))
         return k
 
     def _done(self, title, count, n_photo, n_video, size, site_dir, link, elapsed):
         k = self.inline.screen()
         k.add("<b>✅ Экспорт завершён</b>")
-        k.add("⎯" * 25)
+        k.add("<hr>")
         k.add(f"<b>Чат:</b> {_esc(title)}")
         k.add(f"<b>Сообщений:</b> {count}")
         k.add(f"<b>Фото:</b> {n_photo} · <b>Видео:</b> {n_video}")
@@ -384,7 +384,7 @@ class ChatSave(loader.Module):
             k.add(f"<b>Размер архива:</b> {_fmt_size(size)}")
         k.add(f"<b>Время:</b> {elapsed:.1f} c")
         k.add(f"<code>{_esc(site_dir)}</code>")
-        k.add("⎯" * 25)
+        k.add("<hr>")
         if link:
             k.add(f'<tg-button type="url" url="{link}">🗂 Открыть в архиве</tg-button>')
         k.add(k.row(k.tap("Скрыть", self._freeze, style="primary", force_me=True)))
