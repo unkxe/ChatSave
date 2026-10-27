@@ -1,6 +1,6 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (2, 3, 0)
+__version__ = (2, 3, 1)
 
 import asyncio
 import base64 as _b64
@@ -260,6 +260,8 @@ class ChatSave(loader.Module):
             loader.ConfigValue("save_avatars", True, lambda: "Встраивать аватарки профилей в HTML"),
             loader.ConfigValue("avatar_max_kb", 64, lambda: "Макбалл размера аватарки, КБ"),
             loader.ConfigValue("save_bio", True, lambda: "Пробовать получить описание профиля (bio)"),
+            loader.ConfigValue("profiles_max", 500, lambda: "Максимум профилей для сбора (0 — без лимита)"),
+            loader.ConfigValue("download_timeout", 180, lambda: "Таймаут скачивания одного медиа, сек"),
         )
 
     async def client_ready(self, client, db):
@@ -453,19 +455,33 @@ class ChatSave(loader.Module):
             )
 
     async def _download_media(self, m, fpath, tries=3):
+        per_try = max(15.0, self._opt_num("download_timeout", 180.0))
         last = None
         for attempt in range(max(1, tries)):
             try:
-                got = await self._client.download_media(m, file=fpath)
+                got = await asyncio.wait_for(
+                    self._client.download_media(m, file=fpath), timeout=per_try
+                )
                 if got and os.path.isfile(got) and os.path.getsize(got) > 0:
                     return got
+            except asyncio.TimeoutError:
+                last = TimeoutError("таймаут скачивания")
+                self._cleanup_part(fpath)
             except Exception as e:
                 last = e
             if attempt + 1 < tries:
                 await asyncio.sleep(1.0 + attempt)
-        if last and not os.path.isfile(fpath):
+        self._cleanup_part(fpath)
+        if last:
             raise last
         return None
+
+    def _cleanup_part(self, fpath):
+        try:
+            if os.path.isfile(fpath):
+                os.remove(fpath)
+        except Exception:
+            pass
 
     def _status_text(self, user):
         st = getattr(user, "status", None)
@@ -496,7 +512,9 @@ class ChatSave(loader.Module):
             return None
         try:
             limit = int(self._opt_num("avatar_max_kb", 64)) * 1024
-            data = await self._client.download_profile_photo(who, file=bytes)
+            data = await asyncio.wait_for(
+                self._client.download_profile_photo(who, file=bytes), timeout=12.0
+            )
             if not data:
                 return None
             if len(data) > limit:
@@ -522,7 +540,9 @@ class ChatSave(loader.Module):
             try:
                 from ataraxiatl.tl.functions.users import GetFullUserRequest
 
-                full = await self._client(GetFullUserRequest(who.id))
+                full = await asyncio.wait_for(
+                    self._client(GetFullUserRequest(who.id)), timeout=12.0
+                )
                 prof["bio"] = (getattr(full.full_user, "about", None) or "").strip() or None
             except Exception:
                 pass
@@ -549,7 +569,8 @@ class ChatSave(loader.Module):
                         sender = None
                 if sender is not None and not isinstance(sender, int):
                     senders[sid] = sender
-            for sid, who in senders.items():
+            cap = int(self._opt_num("profiles_max", 500))
+            for sid, who in list(senders.items())[: cap or None]:
                 try:
                     profiles[sid] = await self._profile_of(who)
                     avatars[sid] = self._palette(profiles[sid]["name"])
