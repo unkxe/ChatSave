@@ -1,6 +1,6 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (3, 1, 0)
+__version__ = (3, 2, 0)
 
 import asyncio
 import base64 as _b64
@@ -336,13 +336,13 @@ class ChatSave(loader.Module):
 
     @loader.command()
     async def cs(self, message):
-        """[чат] [топик] [число] [nomedia] — выгрузить чат в HTML-сайт.
-        Без аргументов — текущий чат. Чат: @user, ссылка или ID."""
+        """[чат] [топик] — выгрузить текущий чат в HTML и отправить в указанный чат/топик.
+        Без аргументов — в чат из настроек. Чат-получатель: @user, ссылка или ID."""
         raw = (utils.get_args_raw(message) or "").strip()
         tokens = raw.split()
         limit = int(self.config["default_limit"] or 0)
         do_media = True
-        chat_arg = None
+        dest_arg = None
         topic_arg = None
         for tok in tokens:
             low = tok.lower()
@@ -350,39 +350,24 @@ class ChatSave(loader.Module):
                 do_media = False
             elif low in ("all", "все", "всё"):
                 limit = 0
-            elif re.fullmatch(r"-?\d{3,}", tok) or tok.startswith("@") or "t.me/" in tok:
-                if re.fullmatch(r"\d{1,4}", tok) and chat_arg is not None and topic_arg is None:
-                    topic_arg = int(tok)
-                elif chat_arg is None:
-                    chat_arg = tok
-                elif topic_arg is None:
-                    topic_arg = int(tok) if tok.isdigit() else None
-                else:
-                    limit = max(1, int(tok)) if tok.isdigit() else limit
+            elif dest_arg is None and (tok.startswith("@") or "t.me/" in tok or re.fullmatch(r"-?\d{3,}", tok)):
+                dest_arg = tok
+            elif tok.isdigit() and topic_arg is None:
+                topic_arg = int(tok)
             elif tok.isdigit():
                 limit = max(1, int(tok))
 
         self._cs_stop = False
 
         base = message
-        if message.is_reply and chat_arg is None:
+        if message.is_reply:
             base = await message.get_reply_message()
         try:
-            if chat_arg is not None:
-                entity = chat_arg
-                if "t.me/" in entity:
-                    entity = entity.split("t.me/", 1)[1].split("?", 1)[0].split("/", 1)[0]
-                    if not entity.startswith("@"):
-                        entity = "@" + entity
-                elif re.fullmatch(r"-?\d+", entity):
-                    entity = int(entity)
-                chat = await self._client.get_entity(entity)
-            else:
-                chat = await base.get_chat()
-                if not chat:
-                    chat = await message.get_chat()
+            chat = await base.get_chat()
+            if not chat:
+                chat = await message.get_chat()
         except Exception as e:
-            return await utils.answer(message, f"🚫 Не смог открыть чат «{chat_arg}»: {e!r}"[:300])
+            return await utils.answer(message, f"🚫 Не смог открыть чат: {e!r}"[:300])
         chat_id = utils.get_chat_id(chat)
         title = _display_name(chat) or f"Чат {chat_id}"
 
@@ -504,7 +489,26 @@ class ChatSave(loader.Module):
             zip_path = None
             zip_err = str(e)[:120]
 
-        dest = int(self.config["dest_chat"])
+        if dest_arg is not None:
+            entity = dest_arg
+            if "t.me/" in entity:
+                entity = entity.split("t.me/", 1)[1].split("?", 1)[0].split("/", 1)[0]
+                if not entity.startswith("@"):
+                    entity = "@" + entity
+            elif re.fullmatch(r"-?\d+", entity):
+                entity = int(entity)
+            elif entity.startswith("@"):
+                pass
+            else:
+                entity = "@" + entity
+            try:
+                dest = await self._client.get_entity(entity)
+            except Exception as e:
+                return await utils.answer(
+                    message, f"🚫 Не смог открыть чат-получатель «{dest_arg}»: {e!r}"[:300]
+                )
+        else:
+            dest = int(self.config["dest_chat"])
         topic = int(topic_arg) if topic_arg is not None else int(self.config["dest_topic"])
 
         cap = (
@@ -520,7 +524,7 @@ class ChatSave(loader.Module):
             sent = await self._client.send_file(
                 dest, zip_path, caption=cap, reply_to=topic, force_document=True
             )
-            short = str(dest).replace("-100", "", 1).lstrip("-")
+            short = str(utils.get_chat_id(dest)).replace("-100", "", 1).lstrip("-")
             link = f"https://t.me/c/{short}/{topic}/{sent.id}"
         else:
             if zip_path:
@@ -532,7 +536,7 @@ class ChatSave(loader.Module):
                 sent = await self._client.send_file(
                     dest, index_path, caption=cap, reply_to=topic, force_document=True
                 )
-                short = str(dest).replace("-100", "", 1).lstrip("-")
+                short = str(utils.get_chat_id(dest)).replace("-100", "", 1).lstrip("-")
                 link = f"https://t.me/c/{short}/{topic}/{sent.id}"
             except Exception:
                 link = None
