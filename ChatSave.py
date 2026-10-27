@@ -1,8 +1,11 @@
 # meta developer: @unkxe
 # meta description: Экспорт истории чата в HTML-сайт с фото и видео, отправка в архив-топик
-__version__ = (2, 0, 0)
+__version__ = (2, 2, 0)
 
+import asyncio
+import base64 as _b64
 import html as _html
+import mimetypes as _mt
 import os
 import re
 import time
@@ -31,43 +34,68 @@ MAX_ZIP_BYTES = int(1.9 * 1024**3)
 SITE_ROOT = os.path.expanduser("~/chatsave")
 
 PAGE = """<!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
+:root{--bg0:#0a0f16;--bg1:#0e1621;--bg2:#17212b;--card:rgba(23,33,43,.72);--line:rgba(255,255,255,.08);--fg:#e7ebf0;--dim:#8fa5b9;--accent:#5eb5f7;--accent2:#a695e7;--bubble:#182533;--bubble-out:linear-gradient(135deg,#2b5278,#34689b);--shadow:0 10px 30px rgba(0,0,0,.45)}
+html[data-theme="light"]{--bg0:#eef2f7;--bg1:#f7f9fc;--bg2:#ffffff;--card:rgba(255,255,255,.8);--line:rgba(0,0,0,.08);--fg:#1c2733;--dim:#6b7f93;--accent:#2f80ed;--accent2:#7b61ff;--bubble:#ffffff;--bubble-out:linear-gradient(135deg,#d7e9ff,#c3ddff);--shadow:0 10px 30px rgba(40,60,90,.12)}
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0e1621;color:#e7ebf0;font:15px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:20px 12px 70px}
-.head{display:flex;align-items:center;gap:13px;background:#17212b;border-radius:14px;padding:14px 18px;margin-bottom:18px;box-shadow:0 4px 18px rgba(0,0,0,.35)}
-.ava{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:#fff;flex:none}
-.t1{font-size:17px;font-weight:600}
-.t2{font-size:13px;color:#708499;margin-top:3px}
-.day{text-align:center;margin:20px 0 10px}
-.day span{background:rgba(0,0,0,.25);font-size:12px;color:#c9d1d9;padding:5px 14px;border-radius:14px}
-.svc{text-align:center;margin:10px 0}
-.svc span{background:rgba(0,0,0,.2);font-size:12.5px;color:#9fb3c8;padding:4px 14px;border-radius:12px}
-.m{display:flex;margin:3px 0;align-items:flex-end}
+html{scroll-behavior:smooth}
+body{background:radial-gradient(1200px 600px at 15% -10%,rgba(94,181,247,.16),transparent 60%),radial-gradient(1000px 500px at 100% 0,rgba(166,149,231,.14),transparent 55%),var(--bg1);color:var(--fg);font:15px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;transition:background .4s,color .4s;-webkit-font-smoothing:antialiased}
+.wrap{max-width:880px;margin:0 auto;padding:22px 14px 90px}
+.head{position:sticky;top:10px;z-index:20;display:flex;align-items:center;gap:14px;background:var(--card);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid var(--line);border-radius:18px;padding:14px 18px;margin-bottom:22px;box-shadow:var(--shadow);animation:drop .5s cubic-bezier(.2,.8,.2,1) both}
+.ava{width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;color:#fff;flex:none;box-shadow:0 6px 18px rgba(0,0,0,.35);position:relative;overflow:hidden}
+.ava::after{content:"";position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.15)}
+.t1{font-size:18px;font-weight:700;letter-spacing:.2px}
+.t2{font-size:12.5px;color:var(--dim);margin-top:3px}
+.spacer{flex:1}
+.tool{display:flex;gap:8px}
+.ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--bg2);color:var(--fg);cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center;transition:transform .18s,background .18s,border-color .18s}
+.ib:hover{transform:translateY(-2px);border-color:var(--accent)}
+.ib:active{transform:scale(.94)}
+.day{text-align:center;margin:26px 0 12px;animation:fade .5s both}
+.day span{background:var(--card);backdrop-filter:blur(10px);border:1px solid var(--line);font-size:12px;color:var(--fg);padding:6px 16px;border-radius:16px;font-weight:600;letter-spacing:.3px}
+.svc{text-align:center;margin:12px 0;animation:fade .5s both}
+.svc span{background:rgba(0,0,0,.18);border:1px solid var(--line);font-size:12.5px;color:var(--dim);padding:5px 15px;border-radius:14px}
+.m{display:flex;margin:6px 0;align-items:flex-end;gap:8px;animation:rise .42s cubic-bezier(.2,.8,.2,1) both}
 .m.out{justify-content:flex-end}
-.b{max-width:72%;background:#182533;border-radius:14px;padding:7px 12px 6px;font-size:14.5px;box-shadow:0 1px 2px rgba(0,0,0,.25);overflow-wrap:break-word}
-.m.out .b{background:#2b5278}
-.g1 .b{border-bottom-left-radius:5px}
-.m.out.g1 .b{border-bottom-left-radius:14px;border-bottom-right-radius:5px}
-.nm{display:block;font-size:13.5px;font-weight:600;margin-bottom:2px}
-.note{font-size:12px;color:#8fa5b9;margin:1px 0 3px}
-.m.out .note{color:rgba(255,255,255,.6)}
+.b{position:relative;max-width:74%;background:var(--bubble);border:1px solid var(--line);border-radius:16px;padding:9px 13px 7px;font-size:14.5px;box-shadow:0 3px 12px rgba(0,0,0,.18);overflow-wrap:break-word;transition:transform .18s,box-shadow .18s}
+.b:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(0,0,0,.28)}
+.m.out .b{background:var(--bubble-out);border-color:rgba(255,255,255,.12)}
+.g1 .b{border-bottom-left-radius:6px}
+.m.out.g1 .b{border-bottom-left-radius:16px;border-bottom-right-radius:6px}
+.nm{display:block;font-size:13.5px;font-weight:700;margin-bottom:3px}
+.note{font-size:12px;color:var(--dim);margin:2px 0 4px;font-style:italic}
 .tx{white-space:pre-wrap}
-.tx a{color:#5eb5f7}
-.m.out .tx a{color:#d8e8ff}
-.tm{float:right;margin:6px -3px -4px 12px;font-size:11.5px;color:#708499}
-.m.out .tm{color:rgba(255,255,255,.6)}
-.ext{color:#7cccff;font-size:13px}
-.pm{display:block;max-width:320px;max-height:420px;border-radius:10px;margin:2px 0;cursor:pointer}
-.vd{display:block;width:320px;max-width:100%;border-radius:10px;margin:2px 0}
-.vn{width:200px;height:200px;border-radius:50%;object-fit:cover;margin:2px 0}
-.mfail{display:inline-block;font-size:13px;color:#e17076;margin:2px 0}
-.footer{text-align:center;color:#708499;font-size:12px;margin-top:30px}
+.tx a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s}
+.tx a:hover{border-bottom-color:var(--accent)}
+.tm{float:right;margin:7px -3px -4px 12px;font-size:11px;color:var(--dim)}
+.ext{color:var(--accent);font-size:13px;display:inline-block;padding:3px 0}
+.pm{display:block;max-width:330px;max-height:430px;border-radius:12px;margin:3px 0;cursor:zoom-in;transition:transform .25s,filter .25s;will-change:transform}
+.pm:hover{transform:scale(1.02);filter:brightness(1.06)}
+.vd{display:block;width:330px;max-width:100%;border-radius:12px;margin:3px 0;background:#000}
+.vn{width:230px;height:230px;border-radius:50%;object-fit:cover;margin:4px auto;display:block;border:2px solid var(--line)}
+.mfail{display:inline-block;font-size:13px;color:#e17076;margin:3px 0}
+.burn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:#ff9e57;background:rgba(255,140,60,.13);border:1px solid rgba(255,140,60,.35);padding:2px 9px;border-radius:10px;margin:3px 0}
+.mfile{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.15);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:4px 0;max-width:330px;text-decoration:none;color:var(--fg);transition:transform .18s,border-color .18s}
+.mfile:hover{transform:translateY(-2px);border-color:var(--accent)}
+.mfile .ic{font-size:22px}
+.mfile .fn{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.footer{text-align:center;color:var(--dim);font-size:12px;margin-top:38px;padding-top:18px;border-top:1px solid var(--line)}
+#lb{position:fixed;inset:0;background:rgba(4,8,12,.92);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;z-index:100;opacity:0;transition:opacity .3s}
+#lb.on{display:flex;opacity:1}
+#lb img,#lb video{max-width:94vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6);animation:zoom .35s cubic-bezier(.2,.9,.2,1) both}
+#lb .x{position:absolute;top:18px;right:22px;font-size:30px;color:#fff;cursor:pointer;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);transition:background .2s,transform .2s}
+#lb .x:hover{background:rgba(255,255,255,.2);transform:rotate(90deg)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes drop{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:none}}
+@keyframes zoom{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:600px){.b{max-width:84%}.pm,.vd{max-width:100%}.wrap{padding:14px 10px 80px}}
 </style>
 </head>
 <body>
@@ -78,14 +106,44 @@ body{background:#0e1621;color:#e7ebf0;font:15px/1.45 -apple-system,"Segoe UI",Ro
 <div class="t1">__TITLE__</div>
 <div class="t2">__INFO__</div>
 </div>
+<div class="spacer"></div>
+<div class="tool"><button class="ib" id="theme" title="Тема">🌙</button></div>
 </div>
 __MESSAGES__
 <div class="footer">🗂 ChatSave · __COUNT__ · выгружено __DATE__</div>
 </div>
+<div id="lb"><span class="x">✕</span><div id="lbc"></div></div>
+<script>
+(function(){
+  var root=document.documentElement,tb=document.getElementById('theme');
+  var saved=null;try{saved=localStorage.getItem('cs_theme')}catch(e){}
+  if(saved)root.dataset.theme=saved;
+  function sync(){tb.textContent=root.dataset.theme==='dark'?'🌙':'☀️'}
+  sync();
+  tb.addEventListener('click',function(){
+    root.dataset.theme=root.dataset.theme==='dark'?'light':'dark';
+    try{localStorage.setItem('cs_theme',root.dataset.theme)}catch(e){}
+    sync();
+  });
+  var lb=document.getElementById('lb'),lbc=document.getElementById('lbc');
+  function close(){lb.classList.remove('on');lbc.innerHTML=''}
+  lb.addEventListener('click',function(e){if(e.target===lb||e.target.classList.contains('x'))close()});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
+  document.querySelectorAll('img.pm').forEach(function(img){
+    img.addEventListener('click',function(){
+      lbc.innerHTML='<img src="'+img.getAttribute('src')+'">';
+      lb.classList.add('on');
+    });
+  });
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(en){if(en.isIntersecting){en.target.style.animationPlayState='running';io.unobserve(en.target)}});
+  },{threshold:.05});
+  document.querySelectorAll('.m,.day,.svc').forEach(function(el){el.style.animationPlayState='paused';io.observe(el)});
+})();
+</script>
 </body>
 </html>
 """
-
 
 def _esc(value):
     return _html.escape(str(value if value is not None else ""))
@@ -136,6 +194,8 @@ class ChatSave(loader.Module):
             loader.ConfigValue("dest_chat", 3946198505, lambda: "ID чата-архива, куда падают выгрузки"),
             loader.ConfigValue("dest_topic", 6, lambda: "ID топика (темы) в чате-архиве"),
             loader.ConfigValue("default_limit", 0, lambda: "Сколько сообщений выгружать по умолчанию (0 — вся история)"),
+            loader.ConfigValue("embed_media", True, lambda: "Встраивать фото/видео прямо в HTML (base64, один автономный файл)"),
+            loader.ConfigValue("embed_max_mb", 200, lambda: "Лимит размера одного медиа для встраивания, МБ"),
         )
 
     async def client_ready(self, client, db):
@@ -193,7 +253,7 @@ class ChatSave(loader.Module):
         site_dir = os.path.join(SITE_ROOT, site_name)
         media_dir = os.path.join(site_dir, "media")
         media_map = {}
-        n_photo = n_video = 0
+        n_photo = n_video = n_burn = 0
         media_total = 0
 
         if do_media:
@@ -209,11 +269,11 @@ class ChatSave(loader.Module):
                         break
                     kind = self._kind(m)
                     fname = f"{kind}_{m.id}{self._ext(m)}"
+                    fpath = os.path.join(media_dir, fname)
                     current = fname
+                    ttl = self._ttl(m)
                     try:
-                        got = await self._client.download_media(
-                            m, file=os.path.join(media_dir, fname)
-                        )
+                        got = await self._download_media(m, fpath)
                         th = None
                         if got and kind != "photo":
                             try:
@@ -225,19 +285,29 @@ class ChatSave(loader.Module):
                             except Exception:
                                 th = None
                         if got:
-                            media_map[m.id] = {
-                                "kind": kind,
-                                "file": fname,
-                                "thumb": os.path.basename(th) if th else None,
-                            }
+                            entry = {"kind": kind, "file": fname}
+                            if ttl:
+                                entry["ttl"] = ttl
+                                n_burn += 1
+                            if th:
+                                entry["thumb"] = os.path.basename(th)
+                            self._maybe_embed(entry, fpath, th)
+                            media_map[m.id] = entry
                             if kind == "photo":
                                 n_photo += 1
                             else:
                                 n_video += 1
                         else:
-                            media_map[m.id] = {"kind": kind, "error": "не скачалось"}
+                            if ttl:
+                                media_map[m.id] = {
+                                    "kind": kind,
+                                    "ttl": ttl,
+                                    "error": "сгорающее медиа уже недоступно",
+                                }
+                            else:
+                                media_map[m.id] = {"kind": kind, "error": "не скачалось"}
                     except Exception as e:
-                        media_map[m.id] = {"kind": kind, "error": str(e)[:80]}
+                        media_map[m.id] = {"kind": kind, "ttl": ttl or None, "error": str(e)[:80]}
                     done += 1
                     now = time.time()
                     if form and now - last_edit > 3:
@@ -278,7 +348,7 @@ class ChatSave(loader.Module):
         cap = (
             f"🗂 ChatSave · {title}\n"
             f"🗓 Сообщений: {len(msgs)}"
-            + (f"\n📷 Фото: {n_photo} · 🎬 Видео: {n_video}" if do_media else "\n📷 Медиа отключено (.cs nomedia)")
+            + (f"\n📷 Фото: {n_photo} · 🎬 Видео: {n_video}" + (f" · 🔥 Сгорающих: {n_burn}" if n_burn else "") if do_media else "\n📷 Медиа отключено (.cs nomedia)")
             + (f"\n💾 Размер архива: {_fmt_size(bytes_total)}" if zip_path else "")
             + ("\n⛔ Остановлено вручную (частичный файл)" if stopped else "")
         )
@@ -307,13 +377,78 @@ class ChatSave(loader.Module):
 
         if form:
             await form.edit(rich_html=self._done(
-                title, len(msgs), n_photo, n_video, bytes_total, site_dir, link, time.time() - started
+                title, len(msgs), n_photo, n_video, n_burn, bytes_total, site_dir, link, time.time() - started
             ))
         else:
             await utils.answer(
                 message,
                 cap + (f"\n🔗 {link}" if link else ""),
             )
+
+    async def _download_media(self, m, fpath, tries=3):
+        last = None
+        for attempt in range(max(1, tries)):
+            try:
+                got = await self._client.download_media(m, file=fpath)
+                if got and os.path.isfile(got) and os.path.getsize(got) > 0:
+                    return got
+            except Exception as e:
+                last = e
+            if attempt + 1 < tries:
+                await asyncio.sleep(1.0 + attempt)
+        if last and not os.path.isfile(fpath):
+            raise last
+        return None
+
+    def _maybe_embed(self, entry, fpath, thumb):
+        if not self._opt_bool("embed_media", True):
+            return
+        limit = int(self._opt_num("embed_max_mb", 200)) * 1024 * 1024
+        try:
+            if not os.path.isfile(fpath) or os.path.getsize(fpath) > limit:
+                return
+            mime = _mt.guess_type(fpath)[0] or "application/octet-stream"
+            with open(fpath, "rb") as fh:
+                data = _b64.b64encode(fh.read()).decode("ascii")
+            entry["embed"] = "data:{};base64,{}".format(mime, data)
+            entry["mime"] = mime
+            if thumb and os.path.isfile(thumb):
+                tmime = _mt.guess_type(thumb)[0] or "image/jpeg"
+                with open(thumb, "rb") as fh:
+                    tdata = _b64.b64encode(fh.read()).decode("ascii")
+                entry["embed_thumb"] = "data:{};base64,{}".format(tmime, tdata)
+            os.remove(fpath)
+            if thumb and os.path.isfile(thumb):
+                os.remove(thumb)
+            entry["embedded"] = True
+        except Exception:
+            entry.pop("embed", None)
+            entry.pop("embed_thumb", None)
+
+    def _opt_bool(self, name, default):
+        try:
+            return bool(self.config[name])
+        except Exception:
+            return default
+
+    def _opt_num(self, name, default):
+        try:
+            return float(self.config[name])
+        except Exception:
+            return default
+
+    def _ttl(self, m):
+        try:
+            media = getattr(m, "media", None)
+            ttl = getattr(media, "ttl_seconds", None)
+            if ttl:
+                return int(ttl)
+            ttl = getattr(m, "ttl_period", None)
+            if ttl:
+                return int(ttl)
+        except Exception:
+            pass
+        return 0
 
     def _kind(self, m):
         try:
@@ -373,13 +508,15 @@ class ChatSave(loader.Module):
         k.add(k.row(k.tap("⛔ Остановить", self._stop, style="danger", force_me=True)))
         return k
 
-    def _done(self, title, count, n_photo, n_video, size, site_dir, link, elapsed):
+    def _done(self, title, count, n_photo, n_video, n_burn, size, site_dir, link, elapsed):
         k = self.inline.screen()
         k.add("<b>✅ Экспорт завершён</b>")
         k.add("<hr>")
         k.add(f"<b>Чат:</b> {_esc(title)}")
         k.add(f"<b>Сообщений:</b> {count}")
         k.add(f"<b>Фото:</b> {n_photo} · <b>Видео:</b> {n_video}")
+        if n_burn:
+            k.add(f"<b>🔥 Сгорающих:</b> {n_burn}")
         if size:
             k.add(f"<b>Размер архива:</b> {_fmt_size(size)}")
         k.add(f"<b>Время:</b> {elapsed:.1f} c")
@@ -438,26 +575,34 @@ class ChatSave(loader.Module):
     def _media_html(self, m, item):
         if not item:
             return None
+        burn = ""
+        if item.get("ttl"):
+            burn = f'<div class="burn">🔥 Сгорающее · {item["ttl"]} c</div>'
         if item.get("error"):
             label = self._media(m) or "Медиа"
-            return f'<span class="mfail">{_esc(label)} · не скачалось: {_esc(item["error"])}</span>'
+            return burn + f'<span class="mfail">{_esc(label)} · {_esc(item["error"])}</span>'
         kind = item["kind"]
-        esc_rel = _esc(f"media/{item['file']}")
+        if item.get("embed"):
+            src = item["embed"]
+        else:
+            src = _esc(f"media/{item['file']}")
         if kind == "photo":
-            return (
-                f'<a href="{esc_rel}" target="_blank">'
-                f'<img class="pm" src="{esc_rel}" loading="lazy" alt="фото"'
-                f' onerror="this.outerHTML=\'<span class=mfail>📷 Фото не открылось</span>\'"></a>'
+            return burn + (
+                f'<img class="pm" src="{src}" loading="lazy" alt="фото"'
+                f' onerror="this.outerHTML=\'<span class=mfail>📷 Фото не открылось</span>\'">'
             )
         cls = "vd"
         if kind == "video_note":
             cls = "vd vn"
         if kind == "gif":
-            return f'<video class="{cls}" src="{esc_rel}" autoplay loop muted playsinline preload="metadata"></video>'
+            return burn + f'<video class="{cls}" src="{src}" autoplay loop muted playsinline preload="metadata"></video>'
         poster = ""
-        if item.get("thumb"):
-            poster = f' poster="{_esc("media/" + item["thumb"])}"'
-        return f'<video class="{cls}" src="{esc_rel}" controls preload="none"{poster}></video>'
+        pthumb = item.get("embed_thumb") or (
+            f"media/{item['thumb']}" if item.get("thumb") else None
+        )
+        if pthumb:
+            poster = f' poster="{pthumb if item.get("embed_thumb") else _esc(pthumb)}"'
+        return burn + f'<video class="{cls}" src="{src}" controls preload="none"{poster}></video>'
 
     async def _render(self, title, chat_id, raw, count, media_map=None):
         media_map = media_map or {}
